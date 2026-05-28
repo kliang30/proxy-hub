@@ -18,98 +18,14 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-
-      - name: Fetch and Merge
-        shell: bash
-        run: |
-          set -e
-          TOTAL=0; SUCCESS=0
-          TMPD=$(mktemp -d)
-          > "$TMPD/all.jsonl"
-
-          while IFS= read -r url; do
-            [[ -z "$url" || "$url" =~ ^# ]] && continue
-            TOTAL=$((TOTAL + 1))
-            if curl -sL --max-time 15 --retry 2 -H "User-Agent: clash.meta/1.19" -o "$TMPD/src_$TOTAL" "$url" 2>/dev/null && [ -s "$TMPD/src_$TOTAL" ]; then
-              SUCCESS=$((SUCCESS + 1))
-              python3 -c "
-import sys,yaml,base64,re,json
-src='$TMPD/src_$TOTAL'
-out='$TMPD/all.jsonl'
-with open(src,errors='ignore') as f: content=f.read()
-entries=[]
-try:
-  data=yaml.safe_load(content)
-  if isinstance(data,dict) and 'proxies' in data:
-    for p in data['proxies']:
-      if isinstance(p,dict) and 'server' in p:
-        entries.append(json.dumps(p,ensure_ascii=False))
-except: pass
-if not entries:
-  try:
-    d=base64.b64decode(content.strip()).decode('utf-8',errors='ignore')
-    for l in d.split('\n'):
-      if l.strip() and any(l.startswith(p+'://') for p in ['vmess','vless','trojan','ss','ssr','hysteria','tuic','juicity']):
-        entries.append(json.dumps({'url':l.strip(),'type':l.split('://')[0]},ensure_ascii=False))
-  except: pass
-if not entries:
-  for m in re.finditer(r'(vmess|vless|trojan|ss|ssr|hysteria2?|tuic|juicity)://\S+', content):
-    entries.append(json.dumps({'url':m.group(0),'type':m.group(0).split('://')[0]},ensure_ascii=False))
-if entries:
-  with open(out,'a') as f:
-    for e in entries: f.write(e+'\n')
-" 2>/dev/null || true
-            fi
-          done < sub-urls.txt
-
-          echo "Sources: $SUCCESS/$TOTAL"
-
-          if [ -s "$TMPD/all.jsonl" ]; then
-            python3 -c "
-import json
-seen=set()
-with open('$TMPD/all.jsonl') as f:
-  unique=[]
-  for line in f:
-    line=line.strip()
-    if not line: continue
-    try:
-      e=json.loads(line)
-      key=e.get('server','')+':'+str(e.get('port',''))
-      if not key or key==':': key=e.get('url','')
-      if key and key not in seen:
-        seen.add(key)
-        unique.append(e)
-    except: pass
-
-with open('$TMPD/unique.jsonl','w') as f:
-  for e in unique:
-    f.write(json.dumps(e,ensure_ascii=False)+'\n')
-
-import sys
-print(str(len(unique)),end='',file=sys.stderr)
-" 2>"$TMPD/count.txt" || true
-            COUNT=$(cat "$TMPD/count.txt" 2>/dev/null || echo 0)
-          else
-            COUNT=0
-            > "$TMPD/unique.jsonl"
-          fi
-
-          echo "Unique: $COUNT"
-
-          {
-            echo "# ProxyHub Full Proxy Entries"
-            echo "# Time: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-            echo "# Sources: $SUCCESS/$TOTAL"
-            echo "# Count: $COUNT"
-            echo ""
-            cat "$TMPD/unique.jsonl" 2>/dev/null
-          } > raw-proxies.yaml
-
-          echo "proxy_count=$COUNT" >> $GITHUB_ENV
-          echo "source_count=$SUCCESS" >> $GITHUB_ENV
-          rm -rf "$TMPD"
-
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install PyYAML
+        run: pip install pyyaml
+      - name: Run Fetcher
+        run: python3 fetch_and_merge.py sub-urls.txt raw-proxies.yaml
       - name: Upload artifact
         if: always()
         uses: actions/upload-artifact@v4
@@ -117,31 +33,22 @@ print(str(len(unique)),end='',file=sys.stderr)
           name: raw-proxies
           path: raw-proxies.yaml
           retention-days: 2
-
       - name: Push to Gist
         if: success()
         env:
           GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
           GIST_ID: ${{ secrets.GIST_ID }}
         run: |
-          if [ -z "${GIST_TOKEN:-}" ] || [ -z "${GIST_ID:-}" ]; then
-            echo "SKIP"; exit 0
-          fi
+          if [ -z "${GIST_TOKEN:-}" ] || [ -z "${GIST_ID:-}" ]; then echo "SKIP"; exit 0; fi
           python3 -c "
 import json,os
 with open('raw-proxies.yaml') as f: content=f.read()
-desc=f'ProxyHub {__import__(\"datetime\").datetime.utcnow().strftime(\"%Y-%m-%d %H:%M UTC\")} — {os.environ.get(\"proxy_count\",\"0\")} entries'
+desc=f'ProxyHub {__import__(\"datetime\").datetime.utcnow().strftime(\"%Y-%m-%d %H:%M UTC\")} entries'
 payload={'description':desc,'files':{'raw-proxies.yaml':{'content':content}}}
 with open('/tmp/payload.json','w') as f: json.dump(payload,f,ensure_ascii=False)
 "
-          curl -s -X PATCH -H "Authorization: token $GIST_TOKEN" \
-            -H "Accept: application/vnd.github+json" -H "Content-Type: application/json; charset=utf-8" \
-            "https://api.github.com/gists/$GIST_ID" -d @/tmp/payload.json > /dev/null
-          echo "Pushed ${proxy_count:-0} entries to Gist"
-
+          curl -s -X PATCH -H "Authorization: token $GIST_TOKEN" -H "Accept: application/vnd.github+json" -H "Content-Type: application/json; charset=utf-8" "https://api.github.com/gists/$GIST_ID" -d @/tmp/payload.json
+          echo "Pushed to Gist"
       - name: Summary
         if: always()
-        run: |
-          echo "## Result" >> $GITHUB_STEP_SUMMARY
-          echo "- Sources: ${source_count:-0}/$(grep -c '^[^#]' sub-urls.txt) ok" >> $GITHUB_STEP_SUMMARY
-          echo "- Entries: ${proxy_count:-0}" >> $GITHUB_STEP_SUMMARY
+        run: echo "## Done" >> $GITHUB_STEP_SUMMARY
