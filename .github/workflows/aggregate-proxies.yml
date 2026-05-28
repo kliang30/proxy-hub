@@ -129,6 +129,51 @@ YAMLHEAD
           path: raw-proxies.yaml
           retention-days: 2
 
+      - name: Push to GitHub Gist
+        if: success()
+        env:
+          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+          GIST_ID: ${{ secrets.GIST_ID }}
+        run: |
+          if [ -z "${GIST_TOKEN:-}" ] || [ -z "${GIST_ID:-}" ]; then
+            echo "[WARN] GIST_TOKEN or GIST_ID not configured — skipping Gist push"
+            exit 0
+          fi
+
+          if [ ! -f raw-proxies.yaml ]; then
+            echo "[ERROR] raw-proxies.yaml not found"
+            exit 1
+          fi
+
+          CONTENT=$(cat raw-proxies.yaml | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))")
+          BODY=$(cat <<INNER
+          {
+            "description": "ProxyHub — $(date -u +'%Y-%m-%d %H:%M UTC') — ${proxy_count:-0} proxies from ${source_count:-0} sources",
+            "files": {
+              "raw-proxies.yaml": {
+                "content": $CONTENT
+              }
+            }
+          }
+          INNER
+          )
+
+          echo "Pushing to Gist: $GIST_ID"
+          RESP=$(echo "$BODY" | curl -s -X PATCH \
+            -H "Authorization: token $GIST_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            -H "Content-Type: application/json" \
+            "https://api.github.com/gists/$GIST_ID" \
+            -d @- 2>/dev/null)
+
+          if echo "$RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); print('OK' if 'files' in d else 'FAIL: '+d.get('message','?'))" 2>/dev/null; then
+            echo "Gist updated successfully"
+          else
+            echo "[ERROR] Gist update failed"
+            echo "$RESP" | head -5
+          fi
+          retention-days: 2
+
       - name: Summary
         if: always()
         run: |
