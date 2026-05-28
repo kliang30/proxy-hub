@@ -24,12 +24,9 @@ jobs:
           set -e
           echo "=== ProxyHub ==="
           echo "Start: $(date -u)"
-
-          TOTAL=0
-          SUCCESS=0
+          TOTAL=0; SUCCESS=0
           TMPD=$(mktemp -d)
           > "$TMPD/all.txt"
-
           while IFS= read -r url; do
             [[ -z "$url" || "$url" =~ ^# ]] && continue
             TOTAL=$((TOTAL + 1))
@@ -38,17 +35,13 @@ jobs:
               grep -oE '(vmess|vless|trojan|ss|ssr|hysteria2?|tuic|juicity)://[^[:space:]]+' "$TMPD/src_$TOTAL" 2>/dev/null >> "$TMPD/all.txt" || true
             fi
           done < sub-urls.txt
-
           if [ -s "$TMPD/all.txt" ]; then
             sort -u "$TMPD/all.txt" > "$TMPD/unique.txt"
             COUNT=$(wc -l < "$TMPD/unique.txt" | tr -d ' ')
           else
-            COUNT=0
-            > "$TMPD/unique.txt"
+            COUNT=0; > "$TMPD/unique.txt"
           fi
-
           echo "Sources: $SUCCESS/$TOTAL  Proxies: $COUNT"
-
           {
             echo "# ProxyHub Aggregated Proxies"
             echo "# Time: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -57,7 +50,6 @@ jobs:
             echo ""
             cat "$TMPD/unique.txt" 2>/dev/null || echo "# None"
           } > raw-proxies.yaml
-
           echo "proxy_count=$COUNT" >> $GITHUB_ENV
           echo "source_count=$SUCCESS" >> $GITHUB_ENV
           rm -rf "$TMPD"
@@ -79,12 +71,22 @@ jobs:
           if [ -z "${GIST_TOKEN:-}" ] || [ -z "${GIST_ID:-}" ]; then
             echo "SKIP: secrets not configured"; exit 0
           fi
-          B64=$(base64 -w0 raw-proxies.yaml)
-          DESC="ProxyHub $(date -u +'%Y-%m-%d %H:%M UTC') — ${proxy_count:-0} proxies"
-          curl -s -X PATCH -H "Authorization: token $GIST_TOKEN" \
+          python3 -c "
+          import json, base64, os
+          with open('raw-proxies.yaml', 'rb') as f:
+              content = base64.b64encode(f.read()).decode()
+          desc = f'ProxyHub $(date -u +'%Y-%m-%d %H:%M UTC') — ${proxy_count:-0} proxies'
+          payload = {'description': desc, 'files': {'raw-proxies.yaml': {'content': content}}}
+          with open('/tmp/gist_payload.json', 'w') as f:
+              json.dump(payload, f)
+          "
+          curl -s -X PATCH \
+            -H "Authorization: token $GIST_TOKEN" \
             -H "Accept: application/vnd.github+json" \
+            -H "Content-Type: application/json" \
             "https://api.github.com/gists/$GIST_ID" \
-            -d "{\"description\":\"$DESC\",\"files\":{\"raw-proxies.yaml\":{\"content\":\"$B64\"}}}" > /dev/null
+            -d @/tmp/gist_payload.json
+          echo ""
           echo "Pushed to Gist: ${proxy_count:-0} proxies"
 
       - name: Summary
