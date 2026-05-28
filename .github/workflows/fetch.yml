@@ -1,0 +1,42 @@
+name: Fetch Proxies
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - sub-urls.txt
+      - fetch_and_merge.py
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pyyaml
+      - run: python3 fetch_and_merge.py sub-urls.txt raw-proxies.yaml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: raw-proxies
+          path: raw-proxies.yaml
+          retention-days: 2
+      - name: Push Gist
+        if: success()
+        env:
+          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+          GIST_ID: ${{ secrets.GIST_ID }}
+        run: |
+          if [ -z "$GIST_TOKEN" ] || [ -z "$GIST_ID" ]; then echo "SKIP"; exit 0; fi
+          python3 -c "
+import json,os
+with open('raw-proxies.yaml') as f: c=f.read()
+d=f'ProxyHub {__import__(\"datetime\").datetime.utcnow().strftime(\"%Y-%m-%d %H:%M UTC\")}'
+p={'description':d,'files':{'raw-proxies.yaml':{'content':c}}}
+with open('/tmp/gp.json','w') as f: json.dump(p,f,ensure_ascii=False)
+"
+          curl -s -X PATCH -H "Authorization: token $GIST_TOKEN" -H "Content-Type: application/json; charset=utf-8" "https://api.github.com/gists/$GIST_ID" -d @/tmp/gp.json
+          echo "Done"
+      - run: echo "## Result" >> $GITHUB_STEP_SUMMARY
+        if: always()
