@@ -165,3 +165,4 @@ print(json.dumps({'description': desc, 'files': {'raw-proxies.yaml': {'content':
           echo "- Sources: ${source_count:-?}/$(grep -c '^[^#]' sub-urls.txt || echo '?') ok" >> $GITHUB_STEP_SUMMARY
           echo "- Proxies extracted: ${proxy_count:-?}" >> $GITHUB_STEP_SUMMARY
           echo "- Output: raw-proxies.yaml" >> $GITHUB_STEP_SUMMARY
+
