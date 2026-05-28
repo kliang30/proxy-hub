@@ -1,10 +1,14 @@
 name: Aggregate Proxies
 
 on:
+  push:
   schedule:
-    - cron: '23 2 * * *'
-    - cron: '37 8 * * *'
-    - cron: '51 14 * * *'
+    - cron:
+  push: '23 2 * * *'
+    - cron:
+  push: '37 8 * * *'
+    - cron:
+  push: '51 14 * * *'
   workflow_dispatch:
 
 concurrency:
@@ -13,7 +17,8 @@ concurrency:
 
 jobs:
   aggregate:
-    runs-on: ubuntu-latest
+    runs-on:
+  push: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -57,6 +62,7 @@ try:
             if isinstance(p, dict) and 'server' in p and 'port' in p:
                 entries.append(p)
 except Exception:
+  push:
     pass
 
 # Try Base64 encoded proxy list
@@ -68,6 +74,7 @@ if not entries:
             if line and any(line.startswith(p) for p in ('vmess://','vless://','trojan://','ss://','ssr://','hysteria','tuic://','juicity://')):
                 entries.append({'url': line, 'type': line.split('://')[0]})
     except Exception:
+  push:
         pass
 
 # Try direct proxy URLs in text
@@ -186,7 +193,8 @@ print(f"Payload: {os.path.getsize('/tmp/gist_payload.json')} bytes")
 PYEOF
 
           curl -s -X PATCH \
-            -H "Authorization: token $GIST_TOKEN" \
+            -H "Authorization:
+  push: token $GIST_TOKEN" \
             -H "Accept: application/vnd.github+json" \
             -H "Content-Type: application/json; charset=utf-8" \
             "https://api.github.com/gists/$GIST_ID" \
