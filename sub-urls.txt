@@ -60,3 +60,4 @@ https://raw.githubusercontent.com/learnhard-cn/free_proxy_ss/main/clash/clash.pr
 https://raw.githubusercontent.com/freefq/free/master/v2
 https://raw.githubusercontent.com/wrfree/free/main/v2
 https://raw.githubusercontent.com/wrfree/free/main/ssr
+# test
